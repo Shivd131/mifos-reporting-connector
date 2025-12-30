@@ -66,7 +66,7 @@ My idea is inspired from a **hub-and-spoke** topology:
 * **The Spoke (Reporting Sidecar):** An isolated compute engine dedicated solely to report execution and rendering.
 * **The Channel (Async Middleware):** A durable message broker (ActiveMQ / Kafka) that buffers requests and absorbs traffic spikes without overwhelming the reporting engine.
 
-![Architecture Diagram](MIFOS.drawio-1.png)
+![Architecture Diagram](MIFOS.drawio.png)
 
 ---
 
