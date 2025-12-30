@@ -10,7 +10,7 @@ It started with a simple question: **why do large deployments struggle with memo
 
 To explore this, I spent time studying the Fineract repository, especially the `fineract-provider` codebase, reviewing the `MifosX` modules, and watching the talks on The ASF YouTube channel.
 
-A clear explanation emerged from Frank Nkuyahaga’s breakdown of real-world production challenges <a href="#ref-1">[1]</a>. He described how high-volume deployments frequently encounter `OutOfMemoryError` crashes and severe slowdowns during End of Day processing. To stabilize production, they resorted to an expensive but effective workaround: **horizontal duplication**. They run three full-scale instances of the Fineract monolith, one for APIs, one for reporting, and one for scheduled jobs, purely to isolate traffic.
+A clear explanation emerged from Frank Nkuyahaga’s breakdown of real-world production challenges <a href="#ref-1">[4]</a>. He described how high-volume deployments frequently encounter `OutOfMemoryError` crashes and severe slowdowns during End of Day processing. To stabilize production, they resorted to an expensive but effective workaround: **horizontal duplication**. They run three full-scale instances of the Fineract monolith, one for APIs, one for reporting, and one for scheduled jobs, purely to isolate traffic.
 
 While this approach works, it is costly. The reporting instance still loads thousands of transactional classes it never uses, forcing organizations like MIFOS to provision large servers just to keep reporting from destabilizing the core platform.
 
