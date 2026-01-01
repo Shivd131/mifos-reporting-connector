@@ -1,6 +1,24 @@
 # Mifos X: Offloading Read-Heavy Workloads via CQRS & Reporting Sidecar
 
-A performant, asynchronous reporting service designed to physically decouple the **Pentaho Reporting Engine** from the **Fineract Core**.
+A performant, asynchronous reporting sidecar for **Mifos X**. Designed to physically decouple reporting workloads from the **Fineract Core** and modernize the stack using **Eclipse BIRT**.
+
+---
+
+## Table of Contents
+
+* [Origin & Motivation](#origin--motivation)
+* [Problem Identification & Analysis](#problem-identification--analysis)
+* [Solution Architecture](#solution-architecture)
+    * [High-Level Topology](#high-level-topology-hub-and-spoke)
+    * [The Asynchronous Workflow](#the-asynchronous-workflow)
+* [Core Components & Implementation Details](#core-components--implementation-details)
+* [Key Design Trade-offs](#key-design-trade-offs)
+* [Integration with Mifos Web App](#integration-with-mifos-web-app)
+* [Strategic Importance to the Mifos Initiative](#strategic-importance-to-the-mifos-initiative)
+* [Technical Stack](#technical-stack)
+* [Expected Impact](#expected-impact)
+* [Project Roadmap](#project-roadmap-duration-350-hours)
+* [Resources & References](#resources--references)
 
 ---
 
@@ -54,7 +72,7 @@ While effective, this is incredibly wasteful. It forces organizations to provisi
 
 To resolve the structural bottlenecks of heap exhaustion and connection pool starvation, this project proposes a transition from the current monolithic execution model to an **event-driven sidecar architecture**.
 
-By physically decoupling the **Pentaho Reporting Engine** into a dedicated microservice, the system separates resource-intensive “read” workloads (OLAP) from latency-sensitive “write” operations (OLTP). This aligns with the principles of **Command Query Responsibility Segregation (CQRS)** <a href="#ref-1">[1]</a>, ensuring that complex reporting jobs can no longer destabilize the core banking platform.
+By physically decoupling the reporting logic into a dedicated microservice, the system separates resource-intensive “read” workloads (OLAP) from latency-sensitive “write” operations (OLTP). This aligns with the principles of **Command Query Responsibility Segregation (CQRS)** <a href="#ref-1">[1]</a>, ensuring that complex reporting jobs can no longer destabilize the core banking platform. Furthermore, we replace the legacy Pentaho dependency with **Eclipse BIRT**, aligning with modern open-source standards.
 
 ---
 
@@ -63,10 +81,10 @@ By physically decoupling the **Pentaho Reporting Engine** into a dedicated micro
 My idea is inspired from a **hub-and-spoke** topology:
 
 * **The Hub (Fineract Core):** Acts as the command center, handling authentication, authorization, and all transactional logic.
-* **The Spoke (Reporting Sidecar):** An isolated compute engine dedicated solely to report execution and rendering.
+* **The Spoke (Reporting Sidecar):** An isolated compute engine dedicated solely to report execution using the **BIRT Runtime**.
 * **The Channel (Async Middleware):** A durable message broker (ActiveMQ / Kafka) that buffers requests and absorbs traffic spikes without overwhelming the reporting engine.
 
-![Architecture Diagram](MIFOS.drawio.png)
+![Architecture Diagram](updated.drawio.png)
 
 ---
 
@@ -86,7 +104,7 @@ My idea is inspired from a **hub-and-spoke** topology:
    The Sidecar connects to the database using a **dynamic routing `DataSource`**. If the tenant is configured with a read replica, all heavy analytical queries are routed there, ensuring that the primary transactional database remains unaffected.
 
 5. **Streaming & Persistence**
-   The Pentaho engine renders the report. Instead of buffering the entire output in memory which leads to heap pressure and `OutOfMemoryError` crashes, the result is **streamed directly** to object storage (S3 / MinIO). This keeps memory usage constant regardless of report size.
+The **Eclipse BIRT Engine** renders the report (`.rptdesign` template). Instead of buffering the entire output in memory, the result is **streamed directly** to object storage (S3 / MinIO). This keeps memory usage constant regardless of report size.
 
 6. **Completion Loop**
    Once the report artifact is securely stored, the Sidecar publishes a `JobCompleteEvent` to the **Response Topic**. A listener within the Fineract Core consumes this event and notifies the user (via the notification service) that the report is ready for download.
@@ -169,6 +187,27 @@ Hence, we adopt an **asynchronous request–reply pattern** for report execution
 
 Collectively, these choices enable a reporting architecture that scales independently, avoids contention with transactional workloads, and remains resilient under peak operational load while preserving compatibility with existing Fineract reporting requirements.
 
+## Integration with Mifos Web App
+
+To support our new model, the frontend integration targets the [`web-app`](https://github.com/openMF/web-app) repository, [reports](https://github.com/openMF/web-app/tree/dev/src/app/reports) folder. This project will also involve refactoring the synchronous `Blob` handling into a reactive polling pattern.
+
+### 1. Asynchronous Service Layer (`src/app/reports/reports.service.ts`)
+* **Current State:** The `getPentahoRunReportData` method [Line 105] enforces a blocking HTTP call with `responseType: 'arraybuffer'`, causing browser timeouts on large reports.
+* **Refactoring:**
+    * Introduce `initiateAsyncReport(name, params)`: Sends a `POST` request and expects `HTTP 202` + `Job-ID`.
+    * Introduce `pollReportStatus(jobId)`: A lightweight endpoint to check completion status. 
+
+### 2. Run Report Controller (`src/app/reports/run-report/run-report.component.ts`)
+* **Current State:** The `run()` method [Line 356] simply instantiates the legacy `PentahoComponent`, which triggers the blocking download immediately.
+* **Refactoring Plan:**
+    * Modify `run()` to bypass the legacy `hidePentaho` toggle.
+    * Implement a **Reactive Polling Stream** using RxJS `timer(0, 5000)` and `switchMap` to track the job status.
+    * **User Feedback:** Replace the loading spinner with a non-blocking toast notification using the existing `AlertService` [Line 408]: *"Report processing started. You will be notified when ready."*
+
+
+### 3. Notification & Download Center
+* **New Logic:** When the polling service returns `status: COMPLETED`, the UI will present a **"Download Ready"** action in the Notification Tray [(`src/app/notifications/`)](https://github.com/openMF/web-app/tree/dev/src/app/notifications), allowing the user to fetch the file from the secure Sidecar URL (MinIO) rather than the Fineract Core.
+
 ## Strategic Importance to the Mifos Initiative
 
 This project addresses a critical stability gap in the Fineract ecosystem and organisations using them, directly supporting our foundation's mission to provide robust financial infrastructure for the unbanked.
@@ -191,9 +230,9 @@ The architecture leverages a modern, cloud-native stack that is fully aligned wi
 ---
 
 ### Core Runtime & Framework
-* **Language:** Java 21 (LTS)
-* **Framework:** Spring Boot 3.2+
-* **Build Tool:** Gradle 8.x (Composite builds for strict module separation)
+* **Language:** Java 25 (LTS)
+* **Framework:** Spring Boot >= 4.0.1
+* **Build Tool:** Gradle (Composite builds for strict module separation)
 * **Containerization:** Docker (multi-stage builds)
 
 ---
@@ -201,6 +240,7 @@ The architecture leverages a modern, cloud-native stack that is fully aligned wi
 ### Asynchronous Messaging & Integration
 * **Message Broker:** Apache ActiveMQ 6.x (default) / Apache Kafka (enterprise option)
   *Kafka is kept as an option for high-throughput deployments. ActiveMQ remains the default for now, and the final choice would depend on real production volume and feedback from the maintainers.*
+* **Transport Security:** * **TLS 1.3** enforced for all ActiveMQ connections.
 * **Resilience:** Resilience4j (Circuit breakers applied to database connectors)
 
 ---
@@ -209,14 +249,14 @@ The architecture leverages a modern, cloud-native stack that is fully aligned wi
 * **Connection Pooling:** HikariCP (Configured with leak detection enabled)
 * **Routing:** Spring `AbstractRoutingDataSource` (Dynamic multi-tenant context switching)
 * **Object Storage:** MinIO Client (S3-compatible) for streaming report artifacts
-* **Database:** MariaDB 10.6+ (default) / PostgreSQL 15+
+* **Database:** MariaDB >= 11.5.2 (default) / PostgreSQL >= 17.0
 
 ---
 
 ### Reporting Engine
-* **Engine Core:** Pentaho Reporting Classic Engine (Libre) - *v9.4+*
-* **Templating:** `.prpt` (Pentaho Report Designer) compatibility
-* **Output Formats:** PDF (OpenPDF), Excel (Apache POI), CSV
+* **Engine Core:** **Eclipse BIRT Runtime**
+* **Templating:** `.rptdesign` (BIRT Report Designer) compatibility.
+* **Output Formats:** PDF , Excel (Apache POI), CSV
 
 ---
 
@@ -254,8 +294,8 @@ Once deployed, the proposed architecture is expected to deliver clear, measurabl
 
 **Goal:** Enable the reporting service to securely access tenant data and render reports.
 
-* **Pentaho Integration:** Integrate the Pentaho Classic Engine libraries and resolve classpath conflicts to support headless report generation.
-* **Dynamic Multi-Tenancy (Critical):** Implement `AbstractRoutingDataSource` along with a credential resolution mechanism to dynamically route queries to the correct tenant database based on event metadata.
+* **BIRT Integration:** Integrate the **Eclipse BIRT Runtime** libraries and configure the headless execution environment within the Spring Boot 4 context.
+* **Dynamic Multi-Tenancy:** Implement `AbstractRoutingDataSource` along with a credential resolution mechanism to dynamically route queries to the correct tenant database based on event metadata.
 * **Streaming Pipeline:** Replace the legacy in-memory buffering approach with a `PipedInputStream`-based pipeline to stream generated artifacts directly to S3 / MinIO.
 * **Milestone:** Successful generation of a real PDF report using live data from a specific tenant database.
 
