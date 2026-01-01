@@ -189,7 +189,7 @@ Collectively, these choices enable a reporting architecture that scales independ
 
 ## Integration with Mifos Web App
 
-To support our new model, the frontend integration targets the [`web-app`](https://github.com/openMF/web-app) repository, [reports](https://github.com/openMF/web-app/tree/dev/src/app/reports) folder. This project will also involve refactoring the synchronous `Blob` handling into a reactive polling pattern.
+To support our new model, our project will also involve refactoring the frontend [`web-app`](https://github.com/openMF/web-app) repository, [reports](https://github.com/openMF/web-app/tree/dev/src/app/reports) folder. The synchronous `Blob` handling will be transformed into a reactive polling pattern.
 
 ### 1. Asynchronous Service Layer (`src/app/reports/reports.service.ts`)
 * **Current State:** The `getPentahoRunReportData` method [Line 105] enforces a blocking HTTP call with `responseType: 'arraybuffer'`, causing browser timeouts on large reports.
@@ -301,15 +301,15 @@ Once deployed, the proposed architecture is expected to deliver clear, measurabl
 
 ---
 
-### Phase 3: Hardening & Production Readiness (Weeks 9–12)
+### Phase 3: Hardening, UI Integration & Production Readiness (Weeks 9–12)
 
-**Goal:** Reliability, observability, and handover.
+**Goal:** Reliability, User Experience, observability, and handover.
 
+* **Frontend Integration (Angular):** Refactor the `ReportsService` (in `openmf/web-app`) to implement the reactive polling pattern and update the Notification Tray to support secure, async downloads.
 * **Resilience Layer:** Implement Dead Letter Queues (DLQ) for failed jobs and circuit breakers around database connections.
 * **Isolation Logic:** Finalize the read-replica detection strategy and the `READ_UNCOMMITTED` fallback for single-node deployments.
 * **Validation:** Integrate Micrometer metrics (queue depth, processing time) and perform load testing (JMeter) to validate blast-radius containment.
 * **Milestone:** Final pull request submission with comprehensive deployment documentation and migration guidance.
-
 ## Resources & References
 
 **Architecture & Patterns**
