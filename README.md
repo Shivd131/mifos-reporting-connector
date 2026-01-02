@@ -94,11 +94,11 @@ My idea is inspired from a **hub-and-spoke** topology:
    When a user triggers a report via the web application, the Fineract Core validates permissions and request parameters. It immediately publishes a `ReportRequestEvent` to the **Request Topic**.
    The API responds with `HTTP 202 Accepted` along with a Job ID, releasing the web server thread within milliseconds.
 
-2. **Secure Context Propagation**
-   The multi-tenant context across asynchronous boundaries should not be lost, so the Core injects **tenant identity** (e.g., `tenant_id=bank_a`) and **user context** into message metadata.
+2. **Context & Credential Injection**
+The Fineract Core performs the security lookup. It resolves the specific tenant's database connection details (JDBC URL, Username, Password) from the `mifosplatform-tenants` catalog. These credentials are serialised (and optionally encrypted) into the message payload, ensuring the Sidecar remains stateless and requires zero access to the master configuration database.
 
-3. **Isolated Execution (The Sidecar)**
-   The Reporting Sidecar consumes the event. Before execution begins, a **Context Interceptor** reads the message metadata and rehydrates the internal security and tenant context. A **tenant configuration cache** is then used to resolve the correct database credentials for that tenant.
+3. **Stateless Execution (The Sidecar)**
+The Reporting Sidecar consumes the event. It extracts the connection parameters directly from the message body, instantiates a temporary JDBC connection to the target **Read Replica**, and triggers the BIRT engine.
 
 4. **Read-Replica Routing**
    The Sidecar connects to the database using a **dynamic routing `DataSource`**. If the tenant is configured with a read replica, all heavy analytical queries are routed there, ensuring that the primary transactional database remains unaffected.
@@ -124,7 +124,7 @@ A new component, `AsyncReportingProxy`, will be introduced within the monolith. 
 The Reporting Sidecar is a standalone Spring Boot 3.x application optimized for compute-heavy workloads. It enforces isolation through the following mechanisms:
 
 * **Context-Aware Listener:** A custom `JmsListener` or `KafkaListener` combined with an AOP-based interceptor sets up the `ThreadLocal` tenant and security context before business logic execution.
-* **Lazy-Loaded Configuration:** Tenant database credentials are not stored locally. Instead, the Sidecar periodically fetches connection details from the centralized `mifosplatform-tenants` catalog.
+* **Stateless Connection Factory:** The service does not maintain a connection to the `mifosplatform-tenants` database. Instead, it uses a dynamic `DataSource` factory that spins up connections on-the-fly based exclusively on the credentials provided in the incoming ActiveMQ message.
 * **Throughput Control:** Backpressure is enforced by limiting concurrent consumers. For example, if 500 reports are queued, the Sidecar may process only 5 concurrently (configurable), preventing CPU and memory saturation.
 
 ---
