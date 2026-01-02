@@ -98,13 +98,13 @@ My idea is inspired from a **hub-and-spoke** topology:
 The Fineract Core performs the security lookup. It resolves the specific tenant's database connection details (JDBC URL, Username, Password) from the `mifosplatform-tenants` catalog. These credentials are serialised and encrypted into the message payload, ensuring the Sidecar remains stateless and requires zero access to the master configuration database.
 
 3. **Stateless Execution (The Sidecar)**
-The Reporting Sidecar consumes the event. It extracts the connection parameters directly from the message body, instantiates a temporary JDBC connection to the target **Read Replica**, and triggers the BIRT engine.
+The Reporting Sidecar consumes the event. A **Stateless Connection Factory** intercepts the message, extracts the encrypted credentials, and spins up a transient, read-only JDBC connection to the target **Read Replica**. This Just-In-Time connection ensures the sidecar never holds permanent access to tenant data.
 
 4. **Read-Replica Routing**
    The Sidecar connects to the database using a **dynamic routing `DataSource`**. If the tenant is configured with a read replica, all heavy analytical queries are routed there, ensuring that the primary transactional database remains unaffected.
 
-5. **Streaming & Persistence**
-The **Eclipse BIRT Engine** renders the report (`.rptdesign` template). Instead of buffering the entire output in memory, the result is **streamed directly** to object storage (S3 / MinIO). This keeps memory usage constant regardless of report size.
+5. **Template Loading & Persistence**
+Before rendering, a dedicated **Template Loader** fetches the required `.rptdesign` file from the Replica DB. The **Eclipse BIRT Engine** then combines this template with the live data. Instead of buffering the result in RAM, the engine streams the output directly to **Object Storage** (S3/MinIO), keeping the memory footprint flat.
 
 6. **Completion Loop**
    Once the report artifact is securely stored, the Sidecar publishes a `JobCompleteEvent` to the **Response Topic**. A listener within the Fineract Core consumes this event and notifies the user (via the notification service) that the report is ready for download.
@@ -130,6 +130,7 @@ The Reporting Sidecar is a standalone Spring Boot 3.x application optimized for 
 * **Context-Aware Listener:** A custom `Listener` combined with an AOP-based interceptor sets up the `ThreadLocal` tenant and security context before business logic execution.
 * **Stateless Connection Factory:** The service does not maintain a connection to the `mifosplatform-tenants` database. Instead, it uses  the dynamic `DataSource` factory that will spin up connections on-the-go based exclusively on the credentials provided in the incoming ActiveMQ message.
 * **Throughput Control:** Backpressure is enforced by limiting concurrent consumers. For example, if 500 reports are queued, the Sidecar may process only 5 concurrently (configurable), preventing CPU and memory saturation.
+* **Template Loader:** A lightweight utility that retrieves raw report definitions (`.rptdesign` BLOBs) from the database, ensuring the BIRT Runtime focuses solely on processing data rather than I/O lookups.
 
 ---
 
