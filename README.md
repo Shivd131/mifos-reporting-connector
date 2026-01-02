@@ -11,6 +11,7 @@ A performant, asynchronous reporting sidecar for **Mifos X**. Designed to physic
 * [Solution Architecture](#solution-architecture)
     * [High-Level Topology](#high-level-topology-hub-and-spoke)
     * [The Asynchronous Workflow](#the-asynchronous-workflow)
+    * [Sequence Diagram](#sequence-diagram)
 * [Core Components & Implementation Details](#core-components--implementation-details)
 * [Key Design Trade-offs](#key-design-trade-offs)
 * [Integration with Mifos Web App](#integration-with-mifos-web-app)
