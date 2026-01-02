@@ -84,7 +84,7 @@ My idea is inspired from a **hub-and-spoke** topology:
 * **The Spoke (Reporting Sidecar):** An isolated compute engine dedicated solely to report execution using the **BIRT Runtime**.
 * **The Channel (Async Middleware):** A durable message broker (ActiveMQ / Kafka) that buffers requests and absorbs traffic spikes without overwhelming the reporting engine.
 
-![Architecture Diagram](updated.drawio.png)
+![Architecture Diagram](final.drawio.png)
 
 ---
 
@@ -95,7 +95,7 @@ My idea is inspired from a **hub-and-spoke** topology:
    The API responds with `HTTP 202 Accepted` along with a Job ID, releasing the web server thread within milliseconds.
 
 2. **Context & Credential Injection**
-The Fineract Core performs the security lookup. It resolves the specific tenant's database connection details (JDBC URL, Username, Password) from the `mifosplatform-tenants` catalog. These credentials are serialised (and optionally encrypted) into the message payload, ensuring the Sidecar remains stateless and requires zero access to the master configuration database.
+The Fineract Core performs the security lookup. It resolves the specific tenant's database connection details (JDBC URL, Username, Password) from the `mifosplatform-tenants` catalog. These credentials are serialised and encrypted into the message payload, ensuring the Sidecar remains stateless and requires zero access to the master configuration database.
 
 3. **Stateless Execution (The Sidecar)**
 The Reporting Sidecar consumes the event. It extracts the connection parameters directly from the message body, instantiates a temporary JDBC connection to the target **Read Replica**, and triggers the BIRT engine.
@@ -108,6 +108,10 @@ The **Eclipse BIRT Engine** renders the report (`.rptdesign` template). Instead 
 
 6. **Completion Loop**
    Once the report artifact is securely stored, the Sidecar publishes a `JobCompleteEvent` to the **Response Topic**. A listener within the Fineract Core consumes this event and notifies the user (via the notification service) that the report is ready for download.
+
+### Sequence Diagram
+
+![Sequence Diagram](sequence.drawio.png)
 
 ---
 
@@ -123,8 +127,8 @@ A new component, `AsyncReportingProxy`, will be introduced within the monolith. 
 
 The Reporting Sidecar is a standalone Spring Boot 3.x application optimized for compute-heavy workloads. It enforces isolation through the following mechanisms:
 
-* **Context-Aware Listener:** A custom `JmsListener` or `KafkaListener` combined with an AOP-based interceptor sets up the `ThreadLocal` tenant and security context before business logic execution.
-* **Stateless Connection Factory:** The service does not maintain a connection to the `mifosplatform-tenants` database. Instead, it uses a dynamic `DataSource` factory that spins up connections on-the-fly based exclusively on the credentials provided in the incoming ActiveMQ message.
+* **Context-Aware Listener:** A custom `Listener` combined with an AOP-based interceptor sets up the `ThreadLocal` tenant and security context before business logic execution.
+* **Stateless Connection Factory:** The service does not maintain a connection to the `mifosplatform-tenants` database. Instead, it uses  the dynamic `DataSource` factory that will spin up connections on-the-go based exclusively on the credentials provided in the incoming ActiveMQ message.
 * **Throughput Control:** Backpressure is enforced by limiting concurrent consumers. For example, if 500 reports are queued, the Sidecar may process only 5 concurrently (configurable), preventing CPU and memory saturation.
 
 ---
@@ -260,10 +264,10 @@ The architecture leverages a modern, cloud-native stack that is fully aligned wi
 
 ---
 
-### Observability & Quality Assurance (Still exploring this)
+### Observability & Quality Assurance
 * **Tracing:** OpenTelemetry (Propagates `traceId` from Core to Sidecar)
 * **Metrics:** Micrometer / Prometheus (JVM memory, queue depth, latency)
-* **Testing:** Testcontainers (Integration tests with real MySQL/ActiveMQ instances)
+* **Testing:** Testcontainers (Integration tests with real PostgreSQL/ActiveMQ instances)
 
 ## Expected Impact
 
