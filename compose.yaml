@@ -1,0 +1,39 @@
+services:
+  activemq:
+    image: apache/activemq-artemis:latest
+    environment:
+      ARTEMIS_USER: mifos
+      ARTEMIS_PASSWORD: password
+    ports:
+      - "61616:61616"
+      - "8161:8161"
+
+  mariadb:
+    image: mariadb:latest
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: mifos_reporting
+      MARIADB_USER: mifos
+      MARIADB_PASSWORD: password
+    ports:
+      - "3306:3306"
+    command: >
+      --transaction-isolation=READ-COMMITTED
+      --binlog-format=ROW
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: mifos_reporting
+      POSTGRES_USER: mifos
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  mariadb_data:
+  postgres_data:

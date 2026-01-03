@@ -1,0 +1,109 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.0.1'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'org.mifos.reporting'
+version = '0.0.1-SNAPSHOT'
+description = 'Stateless Reporting Microservice for Mifos X using Eclipse BIRT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.testcontainers:testcontainers-bom:1.21.1"
+	}
+}
+
+dependencies {
+
+	// Spring Boot – Core Starters
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jdbc'
+	implementation 'org.springframework.boot:spring-boot-starter-liquibase'
+	implementation 'org.springframework.boot:spring-boot-starter-artemis'
+
+	// Observability & Metrics
+	implementation 'io.micrometer:micrometer-tracing-bridge-brave'
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+	// Reporting / BIRT
+	implementation("org.eclipse.birt:org.eclipse.birt.report.engine:4.22.0") {
+		exclude group: 'commons-logging', module: 'commons-logging'
+	}
+	// 1. PDF Emitter
+    implementation 'org.eclipse.birt:org.eclipse.birt.report.engine.emitter.pdf:4.22.0'
+
+    // 2. JavaScript Engine (BIRT crashes without this to parse expressions)
+	implementation 'org.eclipse.birt:org.eclipse.birt.report.engine.script.javascript:4.22.0'
+
+	// 3. JDBC ODA (Required to initialize the Data Engine, even for mock data)
+	implementation 'org.eclipse.birt:org.eclipse.birt.report.data.oda.jdbc:4.22.0'
+
+	runtimeOnly 'org.mariadb.jdbc:mariadb-java-client'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	// Development Tools
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
+	annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// Testing – Spring Boot Starters
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-jdbc-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-liquibase-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-artemis-test'
+
+//	// Testing – Testcontainers (CORRECT & COMPLETE)
+//	testImplementation 'org.springframework.boot:spring-boot-testcontainers:4.0.1'
+//	testImplementation 'org.testcontainers:testcontainers:1.21.4'
+//	testImplementation 'org.testcontainers:junit-jupiter:1.21.4'
+//	testImplementation 'org.testcontainers:activemq:1.21.4'
+//	testImplementation 'org.testcontainers:mariadb:1.21.4'
+//	testImplementation 'org.testcontainers:postgresql:1.21.4'
+
+	// Testing – Testcontainers (CORRECT & COMPLETE)
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:activemq'
+	testImplementation 'org.testcontainers:mariadb'
+	testImplementation 'org.testcontainers:postgresql'
+
+
+	// Testing – Lombok & JUnit
+	testCompileOnly 'org.projectlombok:lombok'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	jvmArgs(
+			'--add-opens=java.base/java.net=ALL-UNNAMED',
+			'--add-opens=java.base/sun.net.www.protocol.file=ALL-UNNAMED',
+			'--add-opens=java.base/java.lang=ALL-UNNAMED',
+			'--add-opens=java.base/java.util=ALL-UNNAMED',
+			'--add-opens=java.base/java.security=ALL-UNNAMED'
+	)
+}
