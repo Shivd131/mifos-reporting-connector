@@ -29,7 +29,7 @@ It started with a simple question: **why do large deployments struggle with memo
 
 To explore this, I spent time studying the Fineract repository, especially the `fineract-provider` codebase, reviewing the `MifosX` modules, and watching the talks on The ASF YouTube channel.
 
-A clear explanation emerged from Frank Nkuyahaga’s breakdown of real-world production challenges <a href="#ref-6">[6]</a>. He described how high-volume deployments frequently encounter `OutOfMemoryError` crashes and severe slowdowns during End of Day processing. To stabilize production, they resorted to an expensive but effective workaround: **horizontal duplication**. They run three full-scale instances of the Fineract monolith, one for APIs, one for reporting, and one for scheduled jobs, purely to isolate traffic.
+A clear explanation emerged from Frank Nkuyahaga’s breakdown of real-world production challenges <a href="#ref-5">[5]</a>. He described how high-volume deployments frequently encounter `OutOfMemoryError` crashes and severe slowdowns during End of Day processing. To stabilize production, they resorted to an expensive but effective workaround: **horizontal duplication**. They run three full-scale instances of the Fineract monolith, one for APIs, one for reporting, and one for scheduled jobs, purely to isolate traffic.
 
 While this approach works, it is costly. The reporting instance still loads thousands of transactional classes it never uses, forcing organizations like MIFOS to provision large servers just to keep reporting from destabilizing the core platform.
 
@@ -37,7 +37,7 @@ While digging through the `mifos-reporting-plugin`, I came across a `TODO.md` fi
 
 It became clear that the maintainers had already recognized the limitations of embedding heavy reporting workloads inside the core runtime.
 
-**This project is an attempt to realize that vision.** By extracting the reporting engine into a true sidecar service, it addresses the root causes of memory spikes and database locking, allowing reporting to scale independently without the overhead of running multiple full banking cores <a href="#ref-7">[7]</a>.
+**This project is an attempt to realize that vision.** By extracting the reporting engine into a true sidecar service, it addresses the root causes of memory spikes and database locking, allowing reporting to scale independently without the overhead of running multiple full banking cores <a href="#ref-6">[6]</a>.
 
 
 ## Problem Identification & Analysis
@@ -47,7 +47,7 @@ Here is a breakdown of the five critical failure points I identified:
 ### 1. Synchronous Thread Blocking
 While reviewing `RunreportsApiResource.java`, I noticed that the  [`processRequest`](https://github.com/apache/fineract/blob/develop/fineract-provider/src/main/java/org/apache/fineract/infrastructure/dataqueries/api/RunreportsApiResource.java) method operates synchronously. It forces the Tomcat web server thread to sit idle, waiting for the underlying service to return a `Response` object. There is no queuing or background hand-off.
 
-This explains the "Service Unavailable" errors often reported by mobile wallet clients that Frank N. mentioned <a href="#ref-6">[6]</a>. If a General Ledger report takes 10 minutes to generate, that thread is effectively dead to the rest of the world for 10 minutes. If just 200 users run such reports simultaneously, the entire thread pool exhausts, and the API stops accepting new connections even for critical logins or transfers.
+This explains the "Service Unavailable" errors often reported by mobile wallet clients that Frank N. mentioned <a href="#ref-5">[5]</a>. If a General Ledger report takes 10 minutes to generate, that thread is effectively dead to the rest of the world for 10 minutes. If just 200 users run such reports simultaneously, the entire thread pool exhausts, and the API stops accepting new connections even for critical logins or transfers.
 
 ### 2. JVM Heap Contention 
 The discovery was in [`PentahoReportingProcessServiceImpl.java`](https://github.com/openMF/mifos-reporting-plugin/blob/develop/src/main/java/org/apache/fineract/infrastructure/report/service/PentahoReportingProcessServiceImpl.java), in the `mifos-reporting-plugin`. The code initializes a `ByteArrayOutputStream` to capture the generated report, buffering the entire file in the Core JVM's Heap memory.
@@ -65,7 +65,7 @@ Perhaps the most subtle but damaging issue is how these queries interact with th
 This means long-running analytical queries often acquire shared locks on critical transactional tables (like `m_loan` or `m_savings`). While the report scans these tables, Tellers cannot update them. The business literally freezes, unable to post repayments or approve loans until the report finishes reading the data.
 
 ### 5. Inefficient Scalability (Infrastructure Waste)
-Currently, the only proven way to survive these issues is the pattern described in community talks: running three separate, full-scale instances of the Fineract monolith just to segregate traffic <a href="#ref-6">[6]</a>.
+Currently, the only proven way to survive these issues is the pattern described in community talks: running three separate, full-scale instances of the Fineract monolith just to segregate traffic <a href="#ref-5">[5]</a>.
 
 While effective, this is incredibly wasteful. It forces organizations to provision (and pay for) massive servers for the "Report Instance," which loads thousands of transactional classes it never uses. A decoupled Sidecar architecture would allow us to scale reporting capacity horizontally and cheaply, spinning up lightweight containers only during the End-of-Month rush without duplicating the entire banking core.
 
@@ -171,7 +171,7 @@ Therefore, we allow the reporting service to **connect directly to tenant databa
 
 ### 3. Strict Consistency vs. System Availability
 
-Financial reporting demands accuracy, and strict consistency can be achieved by enforcing strong transactional locks during reads <a href="#ref-2">[2]</a>. However, in high-volume Digital Financial Services (DFS) environments, blocking live transactions in order to generate reports is operationally unacceptable. By leveraging read replicas where available, or relaxed isolation levels such as `READ_UNCOMMITTED`, the system accepts minimal temporal inconsistency (for example, missing a transaction committed milliseconds earlier).
+Financial reporting demands accuracy, and strict consistency can be achieved by enforcing strong transactional locks during reads <a href="#ref-3">[3]</a>. However, in high-volume Digital Financial Services (DFS) environments, blocking live transactions in order to generate reports is operationally unacceptable. By leveraging read replicas where available, or relaxed isolation levels such as `READ_UNCOMMITTED`, the system accepts minimal temporal inconsistency (for example, missing a transaction committed milliseconds earlier).
 
 This trade-off ensures that reporting workloads never acquire locks that block critical transactional tables, preserving uninterrupted teller and customer operations.
 
@@ -227,7 +227,7 @@ Currently, smaller MFIs (Microfinance Institutions) are forced to provision expe
 The Sidecar architecture enables **Elastic Scaling**. Providers can run a lean, low-cost Core server and only spin up temporary, lightweight reporting containers when needed. This significantly lowers the Total Cost of Ownership (TCO), making professional core banking accessible to smaller institutions with limited IT budgets.
 
 ### 3. A Blueprint for Modularization
-The Fineract community has long discussed the need to decompose the monolith <a href="#ref-7">[7]</a>. This project serves as a **canonical reference implementation** for extracting a major functional domain into a microservice without breaking legacy compatibility. It establishes the patterns: Event Envelopes, Context Propagation, and Shared Database contracts that future contributors can use to modularize other heavy components (like Interest Posting or Notification generation).
+The Fineract community has long discussed the need to decompose the monolith <a href="#ref-6">[6]</a>. This project serves as a **canonical reference implementation** for extracting a major functional domain into a microservice without breaking legacy compatibility. It establishes the patterns: Event Envelopes, Context Propagation, and Shared Database contracts that future contributors can use to modularize other heavy components (like Interest Posting or Notification generation).
 
 ## Technical Stack
 
@@ -327,8 +327,8 @@ microservice architecture).
 
 **Youtube Videos(The ASF)**
 
-6. <a id="ref-6"></a> **Nkuyahaga, F.** (2024). [*Expanding Fineract Capabilities*](https://youtu.be/sfp7ox3wMKk). Apache Fineract Community Talk. (Detailed analysis of production scaling limits).
-7. <a id="ref-7"></a> **Vidakovic, A.** (2024). [*Modularizing Fineract: The journey so far*](https://youtu.be/8qp3zQGh5s4). (Discusses the need for decoupling monolithic dependencies).
+5. <a id="ref-5"></a> **Nkuyahaga, F.** (2024). [*Expanding Fineract Capabilities*](https://youtu.be/sfp7ox3wMKk). Apache Fineract Community Talk. (Detailed analysis of production scaling limits).
+6. <a id="ref-6"></a> **Vidakovic, A.** (2024). [*Modularizing Fineract: The journey so far*](https://youtu.be/8qp3zQGh5s4). (Discusses the need for decoupling monolithic dependencies).
 
 **Technical Exploration & Background Reading**
 * **Quarkus.io.** [*Supersonic Subatomic Java*](https://quarkus.io/). (Evaluated as a potential runtime for the sidecar; ultimately discarded in favor of Spring Boot 4 due to BIRT's heavy reliance on reflection).
